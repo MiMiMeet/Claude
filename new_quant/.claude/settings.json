@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pip install -r requirements.txt -q)",
+      "Bash(python main.py)",
+      "Bash(/opt/anaconda3/bin/python -c ' *)",
+      "Bash(/opt/anaconda3/bin/python main.py)",
+      "Bash(ls -la /Users/a1/Documents/CodeProject/Claude/.gitignore 2>/dev/null || echo \"No .gitignore at repo root\")",
+      "Read(//Users/a1/Documents/CodeProject/Claude/**)",
+      "Bash(cat /Users/a1/Documents/CodeProject/Claude/.gitignore 2>/dev/null || echo \"none\")"
+    ],
+    "additionalDirectories": [
+      "/Users/a1/Documents/CodeProject/Claude"
+    ]
+  }
+}

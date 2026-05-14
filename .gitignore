@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.env/
+
+# IDE
+.idea/
+.vscode/
+
+# Data / outputs
+*.csv
+*.xlsx
+backtest_result.png
