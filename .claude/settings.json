@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(jobs -l)"
+      "Bash(jobs -l)",
+      "Bash(ssh -T git@github.com)"
     ]
   }
 }
