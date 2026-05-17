@@ -99,6 +99,13 @@ ax2.plot(result.index, result["equity_market"], label="Buy & Hold",
          alpha=0.5, linestyle="--")
 ax2.fill_between(result.index, CAPITAL, result["equity_strat"],
                  alpha=0.15, color="green")
+
+# Mark stop-loss / take-profit on equity curve
+ax2.scatter(sl.index, sl["equity_strat"], marker="v", s=60,
+            color="purple", zorder=5, label="Stop Loss")
+ax2.scatter(tp.index, tp["equity_strat"], marker="^", s=60,
+            color="orange", zorder=5, label="Take Profit")
+
 ax2.legend(loc="upper left", fontsize=8)
 ax2.set_ylabel("Equity (¥)")
 ax2.set_xlabel("Date")

@@ -27,6 +27,7 @@ def run(
 
     for i in range(1, n):
         cost = 0.0
+        prev_signal = signals[i - 1]
 
         # 1. risk check first
         if in_position and risk_manager is not None:
@@ -39,12 +40,11 @@ def run(
                 in_position = False
                 exit_reason[i] = reason
 
-        # 2. signal check
-        if not in_position and signals[i] == 1:
+        # 2. signal check — use prev bar's signal (matching old position[t]=signal[t-1])
+        if not in_position and prev_signal == 1:
             shares, cost = _open_position(closes[i], capital, "buy", cost_model, risk_manager)
             in_position = True
-            exit_reason[i] = "signal"
-        elif in_position and signals[i] == 0:
+        elif in_position and prev_signal == 0:
             cost = _close_position(closes[i], shares, "sell", cost_model, risk_manager)
             shares = 0
             in_position = False
@@ -52,7 +52,7 @@ def run(
 
         position[i] = 1 if in_position else 0
         cost_arr[i] = cost
-        strat_ret[i] = (position[i] * df["ret"].iloc[i]) / 1.0
+        strat_ret[i] = (position[i] * df["ret"].iloc[i])
 
     df["position"] = position
     df["exit_reason"] = exit_reason
