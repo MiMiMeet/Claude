@@ -8,6 +8,8 @@ import matplotlib.dates as mdates
 from quant_demo.data import fetch_a_share
 from quant_demo.strategy import compute_signals
 from quant_demo.backtest import run, report
+from quant_demo.cost import CostModel
+from quant_demo.risk import RiskManager
 
 plt.rcParams["font.sans-serif"] = ["Arial Unicode MS", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -20,13 +22,34 @@ FAST   = 5          # 短期均线
 SLOW   = 20         # 长期均线
 CAPITAL = 100_000   # 初始资金
 
+# ── cost parameters ─────────────────────────────────────
+COMMISSION  = 0.0003  # 佣金万三
+STAMP_TAX   = 0.001   # 印花税千一
+SLIPPAGE    = 0.0     # 滑点 (bps)
+
+# ── risk parameters ─────────────────────────────────────
+STOP_LOSS   = -0.10   # 止损 -10%
+TAKE_PROFIT = 0.20    # 止盈 +20%
+ENABLE_RISK = True
+
 # ── pipeline ─────────────────────────────────────────────
 print(f"Fetching {SYMBOL} from {START} to {END}...")
 data = fetch_a_share(SYMBOL, START, END)
 print(f"Got {len(data)} trading days.")
 
 signals = compute_signals(data, fast=FAST, slow=SLOW)
-result = run(signals, capital=CAPITAL)
+
+cost = CostModel(
+    commission_rate=COMMISSION,
+    stamp_tax_rate=STAMP_TAX,
+    slippage_bps=SLIPPAGE,
+)
+risk = RiskManager(
+    stop_loss_pct=STOP_LOSS,
+    take_profit_pct=TAKE_PROFIT,
+) if ENABLE_RISK else None
+
+result = run(signals, capital=CAPITAL, cost_model=cost, risk_manager=risk)
 
 # ── report ───────────────────────────────────────────────
 print("\n📊 Performance Report")
@@ -43,15 +66,29 @@ ax1.plot(result.index, result["close"], label="Close", linewidth=0.8, color="#33
 ax1.plot(result.index, result["ma_fast"], label=f"MA{FAST}", alpha=0.8)
 ax1.plot(result.index, result["ma_slow"], label=f"MA{SLOW}", alpha=0.8)
 
-# Mark entry signals
-buys = result[result["trade"] == 1]
-sells = result[result["trade"] == -1]
+pos_shift = result["position"].diff()
+
+# Entry: position 0→1
+buys = result[pos_shift == 1]
 ax1.scatter(buys.index, buys["close"], marker="^", s=60,
             color="red", zorder=5, label="Buy Signal")
-ax1.scatter(sells.index, sells["close"], marker="v", s=60,
+
+# Exit: signal (MA cross sell)
+ss = result[(result["exit_reason"] == "signal") & (pos_shift == -1)]
+ax1.scatter(ss.index, ss["close"], marker="v", s=60,
             color="green", zorder=5, label="Sell Signal")
 
-ax1.set_title(f"{SYMBOL} — MA{FAST}/{SLOW} Crossover Strategy")
+# Stop-loss exits
+sl = result[result["exit_reason"] == "stop_loss"]
+ax1.scatter(sl.index, sl["close"], marker="v", s=60,
+            color="purple", zorder=5, label="Stop Loss")
+
+# Take-profit exits
+tp = result[result["exit_reason"] == "take_profit"]
+ax1.scatter(tp.index, tp["close"], marker="v", s=60,
+            color="orange", zorder=5, label="Take Profit")
+
+ax1.set_title(f"{SYMBOL} — MA{FAST}/{SLOW} Crossover + Cost Model + Risk Control")
 ax1.legend(loc="upper left", fontsize=8)
 ax1.set_ylabel("Price (前复权)")
 ax1.grid(alpha=0.3)

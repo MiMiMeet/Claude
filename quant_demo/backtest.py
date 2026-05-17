@@ -1,35 +1,89 @@
-"""
-Simple vectorized backtesting engine.
-"""
+"""Vectorized backtesting engine with per-bar cost/risk integration."""
 import pandas as pd
 import numpy as np
 
 
-def run(df: pd.DataFrame, capital: float = 100_000) -> pd.DataFrame:
-    """
-    Run a vectorized backtest on the strategy signals.
-    Returns df with equity curve columns.
-    """
+def run(
+    df: pd.DataFrame,
+    capital: float = 100_000,
+    cost_model=None,
+    risk_manager=None,
+) -> pd.DataFrame:
     df = df.copy()
-
-    # Daily returns of the underlying
     df["ret"] = df["close"].pct_change()
 
-    # Position: hold 1 unit (long) when signal==1, else 0 (cash)
-    df["position"] = df["signal"].shift(1).fillna(0).astype(int)
+    n = len(df)
+    position = [0] * n
+    exit_reason = [""] * n
+    cost_arr = [0.0] * n
+    strat_ret = [0.0] * n
 
-    # Strategy daily return
-    df["strat_ret"] = df["position"] * df["ret"]
+    shares = 0
+    in_position = False
 
-    # Equity curves
+    # signals from MA crossover (already in df)
+    signals = df["signal"].fillna(0).astype(int).values
+    closes = df["close"].values
+
+    for i in range(1, n):
+        cost = 0.0
+
+        # 1. risk check first
+        if in_position and risk_manager is not None:
+            reason = risk_manager.check(closes[i])
+            if reason != "hold":
+                cost = _close_position(
+                    closes[i], shares, "sell", cost_model, risk_manager
+                )
+                shares = 0
+                in_position = False
+                exit_reason[i] = reason
+
+        # 2. signal check
+        if not in_position and signals[i] == 1:
+            shares, cost = _open_position(closes[i], capital, "buy", cost_model, risk_manager)
+            in_position = True
+            exit_reason[i] = "signal"
+        elif in_position and signals[i] == 0:
+            cost = _close_position(closes[i], shares, "sell", cost_model, risk_manager)
+            shares = 0
+            in_position = False
+            exit_reason[i] = "signal"
+
+        position[i] = 1 if in_position else 0
+        cost_arr[i] = cost
+        strat_ret[i] = (position[i] * df["ret"].iloc[i]) / 1.0
+
+    df["position"] = position
+    df["exit_reason"] = exit_reason
+    df["trade_cost"] = cost_arr
+    df["strat_ret"] = strat_ret
+
+    # deduct costs from strat returns
+    df["strat_ret"] = df["strat_ret"] - df["trade_cost"] / capital
+
     df["equity_market"] = (1 + df["ret"]).cumprod() * capital
     df["equity_strat"] = (1 + df["strat_ret"]).cumprod() * capital
 
     return df
 
 
+def _open_position(price, capital, action, cost_model, risk_manager):
+    shares = int(capital / price / 100) * 100
+    cost = cost_model.trade_cost(price, shares, action) if cost_model else 0.0
+    if risk_manager:
+        risk_manager.record_entry(price)
+    return shares, cost
+
+
+def _close_position(price, shares, action, cost_model, risk_manager):
+    cost = cost_model.trade_cost(price, shares, action) if cost_model else 0.0
+    if risk_manager:
+        risk_manager.reset()
+    return cost
+
+
 def report(df: pd.DataFrame) -> dict:
-    """Compute key performance metrics."""
     valid = df.dropna(subset=["ret", "strat_ret"])
 
     total_ret = valid["strat_ret"].sum()
@@ -39,6 +93,12 @@ def report(df: pd.DataFrame) -> dict:
     mdd = _max_drawdown(valid["equity_strat"])
     win_rate = (valid["strat_ret"] > 0).sum() / (valid["strat_ret"] != 0).sum()
 
+    total_costs = df["trade_cost"].sum()
+    stop_loss_count = (df["exit_reason"] == "stop_loss").sum()
+    take_profit_count = (df["exit_reason"] == "take_profit").sum()
+    signal_exit_count = (df["exit_reason"] == "signal").sum()
+    trades = signal_exit_count + stop_loss_count + take_profit_count
+
     return {
         "total_return": f"{total_ret:.2%}",
         "annual_return": f"{annual_ret:.2%}",
@@ -46,6 +106,10 @@ def report(df: pd.DataFrame) -> dict:
         "sharpe_ratio": f"{sharpe:.2f}",
         "max_drawdown": f"{mdd:.2%}",
         "win_rate": f"{win_rate:.2%}",
+        "total_costs": f"¥{total_costs:,.0f}",
+        "trades": f"{trades}",
+        "stop_loss": f"{stop_loss_count}",
+        "take_profit": f"{take_profit_count}",
     }
 
 
